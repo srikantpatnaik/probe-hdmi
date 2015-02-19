@@ -21,15 +21,6 @@ source easybashgui
 #Paths
 fb1=/etc/X11/xorg.conf.fb1
 xorg=/etc/X11/xorg.conf
-logfile=/tmp/hdmi.log
-boot_part=/dev/mtd4
-kernel_image_master=/opt/probe-hdmi/kernels/uzImage.bin.master.1280x720.1024x720
-kernel_image_alternate=/opt/probe-hdmi/kernels/uzImage.bin.alternate.1024x600.1280x720
-ramdisk_image=/opt/probe-hdmi/kernels/initrd.img
-setting_b_activated=/opt/probe-hdmi/setting_c_flashed
-setting_c_flashed=/opt/probe-hdmi/setting_c_flashed
-setting_c_activated=/opt/probe-hdmi/setting_c_activated
-#echo>$logfile
 
 function sudo_access() {
 # Clear remember password
@@ -66,75 +57,41 @@ fi
 
 # ==================================================================================
 
-
 function probe_hdmi() {
 
 kernel_resolution=$(cat /sys/class/graphics/fb1/modes | cut -d ':' -f2 | cut -d '-' -f1)
+which_fb=$(lsof /dev/fb* 2>1 | grep -om1 "fb[1|0]")
 
-[ $kernel_resolution == '1024x720p' ] && [ ! -f $xorg ] &&\
-question  "There are three possible settings, A, B, and C. You are in Setting-(A) (default setting) [HDMI might work in setting-(A) with thick bottom bar]: Is HDMI detected at all? If not, do you wish to try setting-(B)? The setting-(B) will make your bottom panel unvailable on netbook screen, but HDMI might work in full screen. Your desktop will be reloaded, save your files, if any. Select 'Ok' to try setting-(B), select 'Cancel' to continue Setting-(A). You may change from setting-(B) to setting-(A) anytime by revisiting this application" 2>&1 && exit 0
-
-[ $kernel_resolution == '1024x720p' ] && [ ! -f $xorg ] &&\
-sudo cp -v $fb1 $xorg>>$logfile &&\
-sudo touch $setting_b_activated &&\
-sudo service lightdm restart &&\
+if [ $kernel_resolution == '1024x720p' ] && [ $which_fb == 'fb0' ]; then
+return_code_A=$(question -w 800 -h 200 "There are two possible settings, A and B. You are in Setting-(A) (default setting): HDMI might work in setting-(A) with thick bottom bar.\\n The setting-(B) will make your bottom panel unvailable on netbook screen, but HDMI might work in full screen. \\nYour desktop will be reloaded, hence save your files. Select 'Ok' to try setting-(B), select 'Cancel' to continue Setting-(A). \\nYou may change from setting-(B) to setting-(A) anytime by revisiting this application" 2>&1)
+[ $return_code_A -eq 1 ] &&  exit 0
+sudo cp -v $fb1 $xorg;
+sudo service lightdm stop;
+lightdm_stop=$(service lightdm status|grep -o stop)
+	while [[ $lightdm_stop == 'stop' ]] ; do
+		sleep 1
+		sudo service lightdm restart &&\
+		lightdm_stop=$(service lightdm status|grep -o stop)
+	done
 exit 0
+fi
 
-#-=========================================================================================
+# ---------------------------------------------------------------------------------
 
-[ $kernel_resolution == '1024x720p' ] && [ -f $xorg ] && [ -f $setting_b_activated ] &&\
-question -w 350 -h 250 "You are in setting-(B): Do you wish to change to setting-(A)(default setting)? Select 'Ok' to switch to setting-(A). Select 'Cancel' to proceed further." 2>&1 && exit 0
-[ $kernel_resolution == '1024x720p' ] && [ -f $xorg ] && [ -f $setting_b_activated ]
-sudo rm -v $xorg>>$logfile &&\
-sudo service lightdm restart && exit 0
-
-# ----------------------------------------------------
-
-[ $kernel_resolution == '1024x720p' ] && [ -f $xorg ] && [ ! -f $setting_b_activated ] &&\
-question "You are in setting-(B): If it works, it is highly recommended to use this setting. If not, you may switch to setting-(C), HDMI might work in full screen with HD resolution(available only in setting-(C)), but netbook screen may go blank. Select 'Ok' to apply setting-(C) (will require 20 seconds, system will be restarted(will confirm restart one more time)). Select 'Cancel' to retain setting-(B). Also, please note, to complete setting-(C) you may also have to do 'Ctrl+Alt+F1' in netbook after restart, login and restart this application by typing 'probehdmi' on console" 2>&1 && exit 0
-
-# ----------------------------------------------------
-
-[ $kernel_resolution == '1024x720p' ] && [ -f $xorg ] && [ ! -f $setting_c_flashed ] &&\
-sudo cp -v $fb1 $xorg>>$logfile &&\
-sudo mkbootimg --kernel $kernel_image_alternate --ramdisk $ramdisk_image -o /tmp/boot.img && sync &&\
-sudo echo 0 > /sys/module/yaffs/parameters/yaffs_bg_enable &&\
-sudo flash_erase $boot_part 0 0 &&\
-sudo nandwrite -p $boot_part /tmp/boot.img &&\
-sudo echo 1 > /sys/module/yaffs/parameters/yaffs_bg_enable &&\
-echo "alternate kernel flashed">>$logfile &&\
-touch $setting_c_flashed
-# ----------------------------------------------------
-
-[ $kernel_resolution == '1024x720p' ] && [ -f $xorg ] && [ -f $setting_c_flashed ] &&\
-question -w 100 -h 200 "Select 'Ok' to restart netbook and apply setting-(C). Select 'Cancel' to restart manually" 2>&1 &&
-[ $? -eq 0 ] &&\
-sudo rm -vf $setting_c_flashed && reboot
-
-
-# =============================================================================================
-
-[ $kernel_resolution == '1280x720p' ] && [ -f $xorg ] && [ ! -f $setting_c_activated ] &&\
-sudo rm -vf $setting_c_flashed>>$logfile &&\
-sudo service lightdm restart &&\
-sudo service lightdm stop &&\
-sudo service lightdm start &&\
-sudo touch $setting_c_activated &&\
+if [ $kernel_resolution == '1024x720p' ] && [ $which_fb == 'fb1' ]; then
+return_code_B=$(question -w 350 -h 250 "You are in setting-(B): Do you wish to change to setting-(A)(default setting)? Select 'Ok' to switch to setting-(A). Select 'Cancel' to continue setting-(B)" 2>&1)
+[ $return_code_B -eq 1 ] && exit 0
+sudo rm -v $xorg;
+sudo service lightdm stop;
+lightdm_stop=$(service lightdm status|grep -o stop)
+	while [[ $lightdm_stop == 'stop' ]] ; do
+		sudo service lightdm restart &&\
+		sleep 1
+		lightdm_stop=$(service lightdm status|grep -o stop)
+	done
 exit 0
+fi
 
-# ----------------------------------------------------
-
-[ $kernel_resolution == '1280x720p' ] && [ -f $xorg ] && [ -f $setting_c_activated ] &&\
-question -w 400 -h 300 "You are in setting-(C): Is HDMI still not working? Sorry, we couldn't do much at this moment. When done, select 'Ok' to switch to setting-(A) (default setting), system will reboot without confirming again. Select 'Cancel' to continue" 2>&1 &&\
-[ $? -eq 0 ] &&\
-sudo rm -v $xorg>>$logfile &&\
-sudo mkbootimg --kernel $kernel_image_master --ramdisk $ramdisk_image -o /tmp/boot.img && sync &&\
-sudo echo 0 > /sys/module/yaffs/parameters/yaffs_bg_enable &&\
-sudo flash_erase $boot_part 0 0 &&\
-sudo nandwrite -p $boot_part /tmp/boot.img &&\
-sudo echo 1 > /sys/module/yaffs/parameters/yaffs_bg_enable &&\
-sudo echo "master kernel flashed">>$logfile &&\
-sudo rm -v $setting_c_activated && sync && reboot
 }
 
 sudo_access

@@ -27,8 +27,7 @@ function sudo_access() {
 sudo -K
 # The only place 'easybashgui' fails. So adding separate functions for both tty(consoles)
 # and pts(terminals). If tty not found, it returns 1, and 'zenity' is used
-tty | grep tty
-if [ $? -eq 1 ]; then
+if [ ! -z $(pidof X) ] ; then
 
 while true
         do
@@ -57,38 +56,37 @@ fi
 
 # ==================================================================================
 
+function try_lightdm_restart() {
+        while true;
+	 do
+           	sudo restart lightdm
+                [ $(service lightdm status|grep -o start) == 'start' ] && break
+        done
+	killall probe_hdmi.sh
+}
+
+
+# ==================================================================================
+
 function probe_hdmi() {
 
 kernel_resolution=$(cat /sys/class/graphics/fb1/modes | cut -d ':' -f2 | cut -d '-' -f1)
-which_fb=$(lsof /dev/fb* 2>1 | grep -om1 "fb[1|0]")
 
-if [ $kernel_resolution == '1024x720p' ] && [ $which_fb == 'fb0' ]; then
-return_code_A=$(question -w 800 -h 200 "There are two possible settings, A and B. You are in Setting-(A) (default setting): HDMI might work in setting-(A) with thick bottom bar.\\n The setting-(B) will make your bottom panel unvailable on netbook screen, but HDMI might work in full screen. \\nYour desktop will be reloaded, hence save your files. Select 'Ok' to try setting-(B), select 'Cancel' to continue Setting-(A). \\nYou may change from setting-(B) to setting-(A) anytime by revisiting this application" 2>&1)
+if [ $kernel_resolution == '1024x720p' ] && [ ! -f $xorg ]; then
+return_code_A=$(question -w 800 -h 200 "There are two possible settings, A and B. You are in Setting-(A) (default setting): You may need to connect the HDMI/HDMI-to-VGA cable to netbook and restart once.\\n\\nHDMI might work in setting-(A) with thick bottom bar.\\n The setting-(B) will make your bottom panel unvailable on netbook screen, but HDMI might work in full screen. \\nYour desktop will be reloaded, hence save your files. Select 'Ok' to try setting-(B), select 'Cancel' to continue Setting-(A). \\nYou may change from setting-(B) to setting-(A) anytime by revisiting this application" 2>&1)
 [ $return_code_A -eq 1 ] &&  exit 0
-sudo cp -v $fb1 $xorg;
-sudo service lightdm stop;
-lightdm_stop=$(service lightdm status|grep -o stop)
-	while [[ $lightdm_stop == 'stop' ]] ; do
-		sleep 1
-		sudo service lightdm restart &&\
-		lightdm_stop=$(service lightdm status|grep -o stop)
-	done
+sudo cp -v $fb1 $xorg
+try_lightdm_restart
 exit 0
 fi
 
 # ---------------------------------------------------------------------------------
 
-if [ $kernel_resolution == '1024x720p' ] && [ $which_fb == 'fb1' ]; then
+if [ $kernel_resolution == '1024x720p' ] && [ -f $xorg ]; then
 return_code_B=$(question -w 350 -h 250 "You are in setting-(B): Do you wish to change to setting-(A)(default setting)? Select 'Ok' to switch to setting-(A). Select 'Cancel' to continue setting-(B)" 2>&1)
 [ $return_code_B -eq 1 ] && exit 0
-sudo rm -v $xorg;
-sudo service lightdm stop;
-lightdm_stop=$(service lightdm status|grep -o stop)
-	while [[ $lightdm_stop == 'stop' ]] ; do
-		sudo service lightdm restart &&\
-		sleep 1
-		lightdm_stop=$(service lightdm status|grep -o stop)
-	done
+sudo rm -v $xorg
+try_lightdm_restart
 exit 0
 fi
 
